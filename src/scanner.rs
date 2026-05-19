@@ -112,22 +112,17 @@ pub async fn run_scan(config: Cli) -> Result<()> {
         loop {
             match rx.next() {
                 Ok(frame) => {
-                    if let Some(ethernet) = EthernetPacket::new(frame) {
-                        if ethernet.get_ethertype() == EtherTypes::Arp {
-                            if let Some(arp) = ArpPacket::new(ethernet.payload()) {
-                                if arp.get_operation() == ArpOperations::Reply {
-                                    // Send discovered host back to async context
-                                    if tx_results
-                                        .blocking_send((
-                                            arp.get_sender_proto_addr(),
-                                            arp.get_sender_hw_addr(),
-                                        ))
-                                        .is_err()
-                                    {
-                                        break; // Receiver dropped, stop listening
-                                    }
-                                }
-                            }
+                    if let Some(ethernet) = EthernetPacket::new(frame)
+                        && ethernet.get_ethertype() == EtherTypes::Arp
+                        && let Some(arp) = ArpPacket::new(ethernet.payload())
+                        && arp.get_operation() == ArpOperations::Reply
+                    {
+                        // Send discovered host back to async context
+                        if tx_results
+                            .blocking_send((arp.get_sender_proto_addr(), arp.get_sender_hw_addr()))
+                            .is_err()
+                        {
+                            break; // Receiver dropped, stop listening
                         }
                     }
                 }
@@ -222,21 +217,19 @@ pub async fn run_scan(config: Cli) -> Result<()> {
                 }
             }
             Some(res) = port_scan_tasks.join_next(), if !port_scan_tasks.is_empty() => {
-                if let Ok((ip, ports)) = res {
-                    if !ports.is_empty() {
+                if let Ok((ip, ports)) = res
+                    && !ports.is_empty() {
                         println!("  - IP: {:<15} Open Ports: {:?}", ip, ports);
                     }
-                }
             }
             _ = &mut timeout => {
                 println!("\nScan complete. Found {} unique hosts.", found_count);
                 // Wait for any remaining port scan tasks
                 while let Some(res) = port_scan_tasks.join_next().await {
-                    if let Ok((ip, ports)) = res {
-                        if !ports.is_empty() {
+                    if let Ok((ip, ports)) = res
+                        && !ports.is_empty() {
                             println!("  - IP: {:<15} Open Ports: {:?}", ip, ports);
                         }
-                    }
                 }
                 break;
             }
