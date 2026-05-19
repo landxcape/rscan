@@ -23,14 +23,15 @@ jobs:
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: rscan
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y libpcap-dev
 
       - name: Check format
-        run: cargo fmt --manifest-path rscan/Cargo.toml -- --check
+        run: cargo fmt -- --check
 
       - name: Lint
-        run: cargo clippy --manifest-path rscan/Cargo.toml -- -D warnings
+        run: cargo clippy -- -D warnings
 
       - name: Run tests
-        run: cargo test --manifest-path rscan/Cargo.toml
+        run: cargo test
