@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Test and Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rscan
+
+      - name: Check format
+        run: cargo fmt --manifest-path rscan/Cargo.toml -- --check
+
+      - name: Lint
+        run: cargo clippy --manifest-path rscan/Cargo.toml -- -D warnings
+
+      - name: Run tests
+        run: cargo test --manifest-path rscan/Cargo.toml
