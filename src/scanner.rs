@@ -1,9 +1,9 @@
 use crate::cli::Cli;
 use anyhow::{Context, Result, bail};
-use pnet::datalink::{self, NetworkInterface, MacAddr};
+use pnet::datalink::{self, MacAddr, NetworkInterface};
+use pnet::packet::Packet;
 use pnet::packet::arp::{ArpHardwareTypes, ArpOperations, ArpPacket, MutableArpPacket};
 use pnet::packet::ethernet::{EtherTypes, EthernetPacket, MutableEthernetPacket};
-use pnet::packet::Packet;
 use std::net::{IpAddr, Ipv4Addr};
 use std::time::Duration;
 use tokio::net::TcpStream;
@@ -29,7 +29,10 @@ async fn scan_ports(ip: Ipv4Addr) -> (Ipv4Addr, Vec<u16>) {
     let mut open_ports = Vec::new();
     for &port in COMMON_PORTS {
         let addr = std::net::SocketAddr::V4(std::net::SocketAddrV4::new(ip, port));
-        if tokio::time::timeout(Duration::from_millis(500), TcpStream::connect(&addr)).await.is_ok() {
+        if tokio::time::timeout(Duration::from_millis(500), TcpStream::connect(&addr))
+            .await
+            .is_ok()
+        {
             open_ports.push(port);
         }
     }
@@ -143,10 +146,13 @@ pub async fn run_scan(config: Cli) -> Result<()> {
         Err(e) => bail!("Failed to create datalink tx channel: {}", e),
     };
 
-    let target_hosts: Vec<Ipv4Addr> = target_cidr.hosts().filter_map(|ip| match ip {
-        IpAddr::V4(v4) => Some(v4),
-        _ => None,
-    }).collect();
+    let target_hosts: Vec<Ipv4Addr> = target_cidr
+        .hosts()
+        .filter_map(|ip| match ip {
+            IpAddr::V4(v4) => Some(v4),
+            _ => None,
+        })
+        .collect();
 
     println!("Scanning {} hosts...", target_hosts.len());
 
@@ -171,7 +177,7 @@ pub async fn run_scan(config: Cli) -> Result<()> {
         arp_packet.set_target_proto_addr(target_ip);
 
         ethernet_packet.set_payload(arp_packet.packet());
-        
+
         if let Some(res) = tx.send_to(ethernet_packet.packet(), None) {
             res.context("Failed to send ARP packet")?;
         }
@@ -196,14 +202,14 @@ pub async fn run_scan(config: Cli) -> Result<()> {
                 if target_cidr.contains(&IpAddr::V4(ip)) {
                     discovered_ips.insert(ip);
                     port_scan_tasks.spawn(scan_ports(ip));
-                    
+
                     // 3. Vendor Lookup
                     // pnet MacAddr is (u8, u8, u8, u8, u8, u8)
                     let mac_bytes = [
                         mac_addr.0, mac_addr.1, mac_addr.2,
                         mac_addr.3, mac_addr.4, mac_addr.5
                     ];
-                    
+
                     let vendor_info = manuf::vendor(mac_bytes)
                         .map(|(short, long)| format!("{} - {}", short, long))
                         .unwrap_or_else(|| "Unknown Vendor".to_string());
@@ -239,4 +245,3 @@ pub async fn run_scan(config: Cli) -> Result<()> {
 
     Ok(())
 }
-
