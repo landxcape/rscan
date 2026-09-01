@@ -1,25 +1,27 @@
 # rscan
 
-A Layer 2 ARP scanner and TCP port auditing tool.
+A high-performance Layer 2 ARP scanner and TCP port discovery tool written in Rust.
 
-`rscan` identifies active hosts on a local network by broadcasting ARP requests and identifies running services via parallel TCP port probing. It includes MAC vendor identification via an embedded OUI database.
+`rscan` identifies active IPv4 hosts on a local subnet by broadcasting raw ARP requests, resolves hardware manufacturers via an embedded MAC OUI database, and concurrently audits open TCP ports.
 
 ## Features
 
-- **Host Discovery:** ARP-based scanning for IPv4 CIDR blocks.
-- **Port Auditing:** Parallel TCP connect probes for common ports (SSH, HTTP, SMB, etc.).
-- **Vendor Lookup:** MAC OUI matching for hardware manufacturer identification.
-- **Interface Selection:** Auto-discovery of the primary network interface or manual selection.
-- **Async Runtime:** Built with `tokio` for concurrent scanning.
+- **Automatic Subnet Discovery:** Automatically derives the local IPv4 subnet CIDR from active interfaces if `--target` is omitted.
+- **Fast ARP Broadcasting & Sniffing:** Uses `pnet` to generate raw Ethernet frames and sniff ARP replies asynchronously.
+- **Concurrent TCP Port Auditing:** Parallel TCP probing with customizable port lists (`-p, --ports`) or instant ARP-only scanning (`--no-ports`).
+- **Hardware Vendor Lookup:** Offline MAC OUI matching for hardware manufacturer identification (`manuf`).
+- **Rich Terminal Table & JSON Output:** Beautiful UTF-8 table rendering with `comfy-table` and structured JSON reporting (`--json`).
+- **Unprivileged Interface Listing:** Inspect local network interfaces and status without requiring `sudo`.
 
 ## Installation
 
-### Prerequisites
+### From Source
 
-- Rust toolchain (stable)
-- Root/administrative privileges (required for raw socket access)
+```bash
+cargo install --path .
+```
 
-### Build
+### Manual Build
 
 ```bash
 git clone https://github.com/landxcape/rscan.git
@@ -27,32 +29,64 @@ cd rscan
 cargo build --release
 ```
 
-The binary is located at `./target/release/rscan`.
+The compiled binary will be located at `./target/release/rscan`.
 
 ## Usage
 
-### Scan Subnet
-Scan a subnet using the default interface:
+*Note: Raw socket operations require root / administrator privileges (`sudo`). Interface listing does not require `sudo`.*
+
+### Auto-Detect Subnet and Scan
+
 ```bash
-sudo ./target/release/rscan --target 192.168.1.0/24
+sudo rscan
 ```
 
-### Specify Interface
+### Scan Specific Subnet & Interface
+
 ```bash
-sudo ./target/release/rscan --target 192.168.1.0/24 --interface eth0
+sudo rscan --target 192.168.1.0/24 --interface en0
 ```
 
-### List Interfaces
+### Fast Scan (Skip Port Auditing)
+
 ```bash
-./target/release/rscan --list-interfaces
+sudo rscan --no-ports
 ```
 
-## Architecture
+### Custom Port List & Timeout
 
-- **Packet Handling:** Uses `pnet` for raw Ethernet and ARP frame management.
-- **Concurrency:** Uses `tokio::task::spawn_blocking` to bridge synchronous packet capture with the asynchronous runtime.
-- **Error Handling:** Uses `anyhow` for context-aware error propagation.
-- **Data:** Uses `manuf` for the MAC OUI database.
+```bash
+sudo rscan -p 22,80,443,8080,3000 -w 3
+```
+
+### JSON Output (Scripting & Automation)
+
+```bash
+sudo rscan --json | jq .
+```
+
+### List Available Network Interfaces
+
+```bash
+rscan --list-interfaces
+```
+
+## CLI Reference
+
+```
+Usage: rscan [OPTIONS]
+
+Options:
+  -t, --target <TARGET>        The target CIDR block to scan (e.g. 192.168.1.0/24). If omitted, inferred from the interface
+  -i, --interface <INTERFACE>  The network interface to bind to (e.g. en0, eth0)
+      --list-interfaces        List all available network interfaces and exit (does not require sudo)
+  -w, --timeout <TIMEOUT>      Timeout in seconds to wait for ARP and port scan replies [default: 2]
+  -p, --ports <PORTS>          Custom ports to scan (e.g., "22,80,443,8080") [default: 21 22 23 80 443 445 3389]
+      --no-ports               Disable TCP port scanning entirely
+      --json                   Output results in JSON format
+  -h, --help                   Print help
+  -V, --version                Print version
+```
 
 ## License
 
