@@ -38,7 +38,9 @@ fn check_privileges() -> Result<()> {
     {
         let uid = unsafe { libc::getuid() };
         if uid != 0 {
-            bail!("Administrative privileges required for raw socket access. Please run with sudo.");
+            bail!(
+                "Administrative privileges required for raw socket access. Please run with sudo."
+            );
         }
     }
     // Windows raw socket / WinPcap support can be checked here if extended in the future
@@ -250,7 +252,10 @@ pub async fn run_scan(config: Cli) -> Result<()> {
     let target_hosts: Vec<Ipv4Addr> = target_network.hosts().collect();
 
     if !config.json {
-        println!("Broadcasting ARP requests to {} hosts...", target_hosts.len());
+        println!(
+            "Broadcasting ARP requests to {} hosts...",
+            target_hosts.len()
+        );
     }
 
     let mut ethernet_buffer = [0u8; 42];

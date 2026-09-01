@@ -2,6 +2,12 @@
 name = "rscan"
 version = "0.1.0"
 edition = "2024"
+description = "High-performance Layer 2 ARP & TCP port network scanner"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/landxcape/rscan"
+keywords = ["network", "arp", "scanner", "port-scanner", "cli"]
+categories = ["command-line-utilities", "network-programming"]
 
 [dependencies]
 anyhow = "1.0.104"
