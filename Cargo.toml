@@ -1,6 +1,6 @@
 [package]
 name = "rscan"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "High-performance Layer 2 ARP & TCP port network scanner"
 license = "MIT"
