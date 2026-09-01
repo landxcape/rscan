@@ -1,6 +1,7 @@
 use clap::Parser;
 use ipnet::IpNet;
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub const DEFAULT_PORTS: &[u16] = &[21, 22, 23, 80, 443, 445, 3389];
 
 #[derive(Parser, Debug, Clone)]
