@@ -245,7 +245,7 @@ pub async fn run_scan(config: Cli) -> Result<()> {
         if config.no_ports {
             println!("Port Scanning   : Disabled");
         } else {
-            println!("Target Ports    : {:?}", config.ports);
+            println!("Target Ports    : {:?}", &config.ports[..]);
         }
     }
 
@@ -335,6 +335,7 @@ pub async fn run_scan(config: Cli) -> Result<()> {
     let mut port_scan_tasks: JoinSet<(Ipv4Addr, Vec<u16>)> = JoinSet::new();
     let semaphore = Arc::new(Semaphore::new(config.concurrency));
     let port_timeout = Duration::from_millis(config.port_timeout_ms);
+    let target_ports = config.ports.0.clone();
 
     loop {
         tokio::select! {
@@ -362,9 +363,9 @@ pub async fn run_scan(config: Cli) -> Result<()> {
 
                     hosts_map.insert(ip, host);
 
-                    if !config.no_ports && !config.ports.is_empty() {
+                    if !config.no_ports && !target_ports.is_empty() {
                         let sem = Arc::clone(&semaphore);
-                        port_scan_tasks.spawn(scan_ports(ip, config.ports.clone(), port_timeout, sem));
+                        port_scan_tasks.spawn(scan_ports(ip, target_ports.clone(), port_timeout, sem));
                     }
                 }
             }
