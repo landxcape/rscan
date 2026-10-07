@@ -33,19 +33,59 @@ pub struct ScanReport {
     pub total_found: usize,
 }
 
-/// Verify if the process has administrative privileges (required for raw sockets)
+/// Verify if the process has administrative privileges or capabilities required for raw sockets
 fn check_privileges() -> Result<()> {
-    #[cfg(unix)]
+    #[cfg(target_os = "macos")]
     {
-        let uid = unsafe { libc::getuid() };
-        if uid != 0 {
+        let euid = unsafe { libc::geteuid() };
+        if euid != 0 {
             bail!(
-                "Administrative privileges required for raw socket access. Please run with sudo."
+                "Administrative privileges (root) are required to access /dev/bpf on macOS. Please run with sudo."
             );
         }
     }
-    // Windows raw socket / WinPcap support can be checked here if extended in the future
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        // On Linux, non-root users may have CAP_NET_RAW / CAP_NET_ADMIN capabilities set via setcap.
+        // Datalink channel creation will attempt to open sockets and return actionable errors if unauthorized.
+    }
+
     Ok(())
+}
+
+/// Create an Ethernet datalink channel with descriptive permission errors
+fn create_datalink_channel(
+    iface: &NetworkInterface,
+) -> Result<(
+    Box<dyn datalink::DataLinkSender>,
+    Box<dyn datalink::DataLinkReceiver>,
+)> {
+    match datalink::channel(iface, Default::default()) {
+        Ok(datalink::Channel::Ethernet(tx, rx)) => Ok((tx, rx)),
+        Ok(_) => bail!(
+            "Unsupported datalink channel type on interface '{}'",
+            iface.name
+        ),
+        Err(e) => {
+            #[cfg(target_os = "linux")]
+            {
+                bail!(
+                    "Failed to create raw datalink channel on '{}': {}. Ensure you are running as root or have granted network capabilities: 'sudo setcap cap_net_raw,cap_net_admin+eip <binary>'",
+                    iface.name,
+                    e
+                );
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                bail!(
+                    "Failed to create raw datalink channel on '{}': {}. Please run with elevated privileges (sudo).",
+                    iface.name,
+                    e
+                );
+            }
+        }
+    }
 }
 
 /// Calculate number of usable host addresses in an IPv4 network
@@ -254,11 +294,7 @@ pub async fn run_scan(config: Cli) -> Result<()> {
 
     // 5. Spawn the synchronous listener in a blocking task
     let _listener_handle = tokio::task::spawn_blocking(move || -> Result<()> {
-        let (_, mut rx) = match datalink::channel(&iface_clone, Default::default()) {
-            Ok(datalink::Channel::Ethernet(tx, rx)) => (tx, rx),
-            Ok(_) => bail!("Unhandled channel type"),
-            Err(e) => bail!("Failed to create datalink channel: {}", e),
-        };
+        let (_, mut rx) = create_datalink_channel(&iface_clone)?;
 
         loop {
             match rx.next() {
@@ -284,11 +320,7 @@ pub async fn run_scan(config: Cli) -> Result<()> {
     });
 
     // 6. Datalink TX channel
-    let (mut tx, _) = match datalink::channel(&iface, Default::default()) {
-        Ok(datalink::Channel::Ethernet(tx, rx)) => (tx, rx),
-        Ok(_) => bail!("Unhandled channel type"),
-        Err(e) => bail!("Failed to create datalink tx channel: {}", e),
-    };
+    let (mut tx, _) = create_datalink_channel(&iface)?;
 
     let host_count = calculate_host_count(target_network);
 
