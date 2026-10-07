@@ -48,6 +48,16 @@ fn check_privileges() -> Result<()> {
     Ok(())
 }
 
+/// Calculate number of usable host addresses in an IPv4 network
+fn calculate_host_count(net: ipnet::Ipv4Net) -> u64 {
+    let prefix = net.prefix_len();
+    if prefix >= 31 {
+        0
+    } else {
+        (1u64 << (32 - prefix)) - 2
+    }
+}
+
 /// Infer IPv4 subnet from the assigned interface addresses
 fn infer_subnet(iface: &NetworkInterface) -> Result<ipnet::Ipv4Net> {
     for ip_net in &iface.ips {
@@ -220,6 +230,14 @@ pub async fn run_scan(config: Cli) -> Result<()> {
         None => infer_subnet(&iface)?,
     };
 
+    if target_network.prefix_len() < 16 && !config.allow_large_subnet {
+        bail!(
+            "Target network {} (/{}) contains more than 65,534 potential hosts. Scanning networks larger than /16 can cause severe network congestion. Pass --allow-large-subnet to proceed.",
+            target_network,
+            target_network.prefix_len()
+        );
+    }
+
     if !config.json {
         println!("Bound Interface : {} ({})", iface.name, mac);
         println!("Source IP       : {}", source_ip);
@@ -272,19 +290,16 @@ pub async fn run_scan(config: Cli) -> Result<()> {
         Err(e) => bail!("Failed to create datalink tx channel: {}", e),
     };
 
-    let target_hosts: Vec<Ipv4Addr> = target_network.hosts().collect();
+    let host_count = calculate_host_count(target_network);
 
     if !config.json {
-        println!(
-            "Broadcasting ARP requests to {} hosts...",
-            target_hosts.len()
-        );
+        println!("Broadcasting ARP requests to {host_count} hosts...");
     }
 
     let mut ethernet_buffer = [0u8; 42];
     let mut arp_buffer = [0u8; 28];
 
-    for target_ip in target_hosts {
+    for target_ip in target_network.hosts() {
         let mut ethernet_packet = MutableEthernetPacket::new(&mut ethernet_buffer).unwrap();
         ethernet_packet.set_destination(MacAddr::broadcast());
         ethernet_packet.set_source(mac);
@@ -305,6 +320,10 @@ pub async fn run_scan(config: Cli) -> Result<()> {
 
         if let Some(res) = tx.send_to(ethernet_packet.packet(), None) {
             res.context("Failed to send ARP packet")?;
+        }
+
+        if config.arp_delay_us > 0 {
+            tokio::time::sleep(Duration::from_micros(config.arp_delay_us)).await;
         }
     }
 
@@ -417,5 +436,23 @@ mod tests {
 
         assert_eq!(ip, Ipv4Addr::LOCALHOST);
         assert_eq!(ports, vec![open_port]);
+    }
+
+    #[test]
+    fn test_calculate_host_count() {
+        let net_24: ipnet::Ipv4Net = "192.168.1.0/24".parse().unwrap();
+        assert_eq!(calculate_host_count(net_24), 254);
+
+        let net_16: ipnet::Ipv4Net = "10.0.0.0/16".parse().unwrap();
+        assert_eq!(calculate_host_count(net_16), 65534);
+
+        let net_30: ipnet::Ipv4Net = "10.0.0.0/30".parse().unwrap();
+        assert_eq!(calculate_host_count(net_30), 2);
+
+        let net_31: ipnet::Ipv4Net = "10.0.0.0/31".parse().unwrap();
+        assert_eq!(calculate_host_count(net_31), 0);
+
+        let net_32: ipnet::Ipv4Net = "10.0.0.1/32".parse().unwrap();
+        assert_eq!(calculate_host_count(net_32), 0);
     }
 }

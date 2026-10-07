@@ -43,6 +43,14 @@ pub struct Cli {
     #[arg(long)]
     pub no_ports: bool,
 
+    /// Allow scanning subnets larger than /16 (> 65,534 potential hosts)
+    #[arg(long)]
+    pub allow_large_subnet: bool,
+
+    /// Delay in microseconds between consecutive ARP request transmissions
+    #[arg(long, default_value = "0")]
+    pub arp_delay_us: u64,
+
     /// Output results in JSON format
     #[arg(long)]
     pub json: bool,
@@ -58,6 +66,8 @@ mod tests {
         assert_eq!(args.timeout, 2);
         assert_eq!(args.port_timeout_ms, 300);
         assert_eq!(args.concurrency, 100);
+        assert_eq!(args.arp_delay_us, 0);
+        assert!(!args.allow_large_subnet);
         assert_eq!(args.ports, DEFAULT_PORTS);
         assert!(!args.no_ports);
         assert!(!args.json);
@@ -76,6 +86,9 @@ mod tests {
             "150",
             "--concurrency",
             "50",
+            "--arp-delay-us",
+            "250",
+            "--allow-large-subnet",
             "--no-ports",
             "--json",
             "-w",
@@ -84,6 +97,8 @@ mod tests {
         assert_eq!(args.ports, vec![80, 443, 8080]);
         assert_eq!(args.port_timeout_ms, 150);
         assert_eq!(args.concurrency, 50);
+        assert_eq!(args.arp_delay_us, 250);
+        assert!(args.allow_large_subnet);
         assert!(args.no_ports);
         assert!(args.json);
         assert_eq!(args.timeout, 5);
