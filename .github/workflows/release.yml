@@ -44,6 +44,14 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libpcap-dev
 
+      - name: Setup Npcap SDK for Build Linking (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://npcap.com/dist/npcap-sdk-1.13.zip" -OutFile "npcap-sdk.zip"
+          Expand-Archive -Path "npcap-sdk.zip" -DestinationPath "$env:RUNNER_TEMP\npcap-sdk"
+          echo "LIB=$env:RUNNER_TEMP\npcap-sdk\Lib\x64;$env:LIB" >> $env:GITHUB_ENV
+
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
 
