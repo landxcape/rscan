@@ -1,4 +1,6 @@
 mod cli;
+mod core;
+mod output;
 mod scanner;
 
 use clap::Parser;
