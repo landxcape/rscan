@@ -3,17 +3,18 @@
 [![Rust](https://img.shields.io/badge/Rust-2024%20Edition-orange?logo=rust)](https://www.rust-lang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Async: Tokio](https://img.shields.io/badge/Async-Tokio-brightgreen?logo=tokio)](https://tokio.rs/)
-[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux-lightgrey)]()
+[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)]()
 
 A high-performance Layer 2 ARP network discovery and concurrent TCP port scanner written in Rust.
 
-`rscan` sweeps local subnets by broadcasting raw Ethernet frames, sniffs ARP replies to bypass host-level firewalls that block ICMP echo requests, resolves hardware manufacturers against an offline IEEE OUI database, and concurrently audits open TCP ports using bounded asynchronous tasks.
+`rscan` sweeps local subnets by broadcasting raw Ethernet frames (on macOS/Linux) or utilizing native OS IP Helper APIs (on Windows), sniffs ARP replies to bypass host-level firewalls that block ICMP echo requests, resolves hardware manufacturers against an offline IEEE OUI database, and concurrently audits open TCP ports using bounded asynchronous tasks.
 
 ---
 
 ## Features
 
-- **Layer 2 ARP Discovery:** Bypasses host firewalls that silence ICMP ping probes by broadcasting raw ARP frames directly via `pnet`.
+- **Layer 2 ARP Discovery:** Bypasses host firewalls that silence ICMP ping probes by broadcasting raw ARP frames directly via `pnet` (macOS/Linux) or native Win32 `SendARP` (Windows).
+- **Zero Drivers on Windows:** Windows discovery runs as a self-contained single executable with zero external drivers (no Npcap/WinPcap required) and without requiring administrator privileges.
 - **Automatic Subnet & Interface Resolution:** Inactive or unconfigured flags default to deriving the local active IPv4 subnet and hardware interface automatically.
 - **Flexible Port Syntax:** Supports single ports, comma-separated lists, and continuous port ranges (e.g., `-p 22,80,443,8000-8080`) with automatic deduplication.
 - **Bounded Async TCP Probing:** Utilizes Tokio and `tokio::sync::Semaphore` to probe ports across discovered hosts with strict file-descriptor limits and configurable timeouts.
@@ -23,30 +24,46 @@ A high-performance Layer 2 ARP network discovery and concurrent TCP port scanner
   - Formatted UTF-8 ASCII tables via `comfy-table`.
   - Structured JSON with `--json` for machine ingestion.
   - Line-by-line IP stream with `--plain` / `-q` for Unix pipelines.
-- **Platform Capability Awareness:** Detects root requirements on macOS (`/dev/bpf`) and supports non-root execution on Linux via `cap_net_raw` and `cap_net_admin` file capabilities.
+- **Platform Capability Awareness:** Detects root requirements on macOS (`/dev/bpf`), supports non-root execution on Linux via `cap_net_raw`, and runs out-of-the-box on Windows.
 
 ---
 
 ## Installation
 
-### Prerequisites
-- Rust 1.85+ (2024 edition).
-- Elevated privileges (`sudo`) or network packet capture capabilities (`cap_net_raw`).
+### Option 1: Homebrew (macOS & Linux - Recommended)
 
-### From Source
+Install pre-compiled release binaries via the official `landxcape` tap:
+
+```bash
+brew tap landxcape/tap
+brew install landxcape/tap/rscan
+```
+
+To update `rscan` later:
+```bash
+brew update && brew upgrade rscan
+```
+
+### Option 2: Pre-Compiled Standalone Binaries (macOS, Linux, Windows)
+
+Download the latest pre-compiled archive for your architecture from the [GitHub Releases](https://github.com/landxcape/rscan/releases):
+
+| Platform | Architecture | Archive |
+| :--- | :--- | :--- |
+| **macOS** | Apple Silicon (`arm64`) | `rscan-macos-aarch64.tar.gz` |
+| **macOS** | Intel (`x86_64`) | `rscan-macos-x86_64.tar.gz` |
+| **Linux** | `x86_64` | `rscan-linux-x86_64.tar.gz` |
+| **Windows** | `x86_64` | `rscan-windows-x86_64.zip` |
+
+Extract and place the binary (`rscan` or `rscan.exe`) anywhere in your `PATH` (e.g. `/usr/local/bin` on Unix).
+
+### Option 3: From Source (Rust Toolchain)
 
 ```bash
 git clone https://github.com/landxcape/rscan.git
 cd rscan
 cargo install --path .
 ```
-
-### Manual Build
-
-```bash
-cargo build --release
-```
-The optimized binary will be created at `./target/release/rscan`.
 
 ### Linux Non-Root Execution (`setcap`)
 To run `rscan` on Linux without prefixing `sudo`, grant raw socket capabilities:
