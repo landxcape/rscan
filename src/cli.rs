@@ -27,6 +27,14 @@ pub struct Cli {
     #[arg(short = 'w', long, default_value = "2")]
     pub timeout: u64,
 
+    /// Timeout in milliseconds for each TCP port connection attempt
+    #[arg(long, default_value = "300")]
+    pub port_timeout_ms: u64,
+
+    /// Maximum concurrent TCP connection attempts across all hosts
+    #[arg(long, default_value = "100")]
+    pub concurrency: usize,
+
     /// Custom ports to scan (e.g., "22,80,443,8080")
     #[arg(short, long, value_delimiter = ',', default_values_t = [21, 22, 23, 80, 443, 445, 3389])]
     pub ports: Vec<u16>,
@@ -48,6 +56,8 @@ mod tests {
     fn test_cli_default_parsing() {
         let args = Cli::parse_from(["rscan"]);
         assert_eq!(args.timeout, 2);
+        assert_eq!(args.port_timeout_ms, 300);
+        assert_eq!(args.concurrency, 100);
         assert_eq!(args.ports, DEFAULT_PORTS);
         assert!(!args.no_ports);
         assert!(!args.json);
@@ -62,12 +72,18 @@ mod tests {
             "rscan",
             "-p",
             "80,443,8080",
+            "--port-timeout-ms",
+            "150",
+            "--concurrency",
+            "50",
             "--no-ports",
             "--json",
             "-w",
             "5",
         ]);
         assert_eq!(args.ports, vec![80, 443, 8080]);
+        assert_eq!(args.port_timeout_ms, 150);
+        assert_eq!(args.concurrency, 50);
         assert!(args.no_ports);
         assert!(args.json);
         assert_eq!(args.timeout, 5);

@@ -9,10 +9,11 @@ use pnet::packet::arp::{ArpHardwareTypes, ArpOperations, ArpPacket, MutableArpPa
 use pnet::packet::ethernet::{EtherTypes, EthernetPacket, MutableEthernetPacket};
 use serde::Serialize;
 use std::collections::HashMap;
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpStream;
-use tokio::sync::mpsc;
+use tokio::sync::{Semaphore, mpsc};
 use tokio::task::JoinSet;
 
 #[derive(Debug, Clone, Serialize)]
@@ -63,18 +64,40 @@ fn infer_subnet(iface: &NetworkInterface) -> Result<ipnet::Ipv4Net> {
     );
 }
 
-/// Asynchronously probe TCP ports with a 500ms timeout per port
-async fn scan_ports(ip: Ipv4Addr, ports: Vec<u16>) -> (Ipv4Addr, Vec<u16>) {
+/// Asynchronously probe TCP ports concurrently with a bounded semaphore and per-port timeout
+async fn scan_ports(
+    ip: Ipv4Addr,
+    ports: Vec<u16>,
+    timeout: Duration,
+    semaphore: Arc<Semaphore>,
+) -> (Ipv4Addr, Vec<u16>) {
+    let mut tasks = JoinSet::new();
+
+    for port in ports {
+        let sem = Arc::clone(&semaphore);
+        tasks.spawn(async move {
+            let Ok(_permit) = sem.acquire().await else {
+                return None;
+            };
+            let addr = SocketAddr::V4(SocketAddrV4::new(ip, port));
+            if matches!(
+                tokio::time::timeout(timeout, TcpStream::connect(&addr)).await,
+                Ok(Ok(_))
+            ) {
+                Some(port)
+            } else {
+                None
+            }
+        });
+    }
+
     let mut open_ports = Vec::new();
-    for &port in &ports {
-        let addr = std::net::SocketAddr::V4(std::net::SocketAddrV4::new(ip, port));
-        if tokio::time::timeout(Duration::from_millis(500), TcpStream::connect(&addr))
-            .await
-            .is_ok()
-        {
+    while let Some(res) = tasks.join_next().await {
+        if let Ok(Some(port)) = res {
             open_ports.push(port);
         }
     }
+    open_ports.sort_unstable();
     (ip, open_ports)
 }
 
@@ -291,6 +314,8 @@ pub async fn run_scan(config: Cli) -> Result<()> {
 
     let mut hosts_map: HashMap<Ipv4Addr, HostResult> = HashMap::new();
     let mut port_scan_tasks: JoinSet<(Ipv4Addr, Vec<u16>)> = JoinSet::new();
+    let semaphore = Arc::new(Semaphore::new(config.concurrency));
+    let port_timeout = Duration::from_millis(config.port_timeout_ms);
 
     loop {
         tokio::select! {
@@ -319,7 +344,8 @@ pub async fn run_scan(config: Cli) -> Result<()> {
                     hosts_map.insert(ip, host);
 
                     if !config.no_ports && !config.ports.is_empty() {
-                        port_scan_tasks.spawn(scan_ports(ip, config.ports.clone()));
+                        let sem = Arc::clone(&semaphore);
+                        port_scan_tasks.spawn(scan_ports(ip, config.ports.clone(), port_timeout, sem));
                     }
                 }
             }
@@ -330,7 +356,8 @@ pub async fn run_scan(config: Cli) -> Result<()> {
                     }
             }
             _ = &mut scan_timeout => {
-                // Wait for any remaining port scan tasks to complete
+                // Abort in-flight port scans immediately to uphold strict scan deadline
+                port_scan_tasks.abort_all();
                 while let Some(res) = port_scan_tasks.join_next().await {
                     if let Ok((ip, ports)) = res
                         && let Some(host) = hosts_map.get_mut(&ip) {
@@ -360,4 +387,35 @@ pub async fn run_scan(config: Cli) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::net::TcpListener;
+
+    #[tokio::test]
+    async fn test_concurrent_scan_ports() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let open_port = listener.local_addr().unwrap().port();
+        let closed_port = if open_port < 65535 {
+            open_port + 1
+        } else {
+            open_port - 1
+        };
+
+        let semaphore = Arc::new(Semaphore::new(10));
+        let timeout = Duration::from_millis(200);
+
+        let (ip, ports) = scan_ports(
+            Ipv4Addr::LOCALHOST,
+            vec![open_port, closed_port],
+            timeout,
+            semaphore,
+        )
+        .await;
+
+        assert_eq!(ip, Ipv4Addr::LOCALHOST);
+        assert_eq!(ports, vec![open_port]);
+    }
 }
