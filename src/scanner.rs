@@ -278,7 +278,7 @@ pub async fn run_scan(config: Cli) -> Result<()> {
         );
     }
 
-    if !config.json {
+    if !config.json && !config.plain {
         println!("Bound Interface : {} ({})", iface.name, mac);
         println!("Source IP       : {}", source_ip);
         println!("Target Network  : {}", target_network);
@@ -324,7 +324,7 @@ pub async fn run_scan(config: Cli) -> Result<()> {
 
     let host_count = calculate_host_count(target_network);
 
-    if !config.json {
+    if !config.json && !config.plain {
         println!("Broadcasting ARP requests to {host_count} hosts...");
     }
 
@@ -431,7 +431,11 @@ pub async fn run_scan(config: Cli) -> Result<()> {
         hosts,
     };
 
-    if config.json {
+    if config.plain {
+        for host in &report.hosts {
+            println!("{}", host.ip);
+        }
+    } else if config.json {
         let json_str = serde_json::to_string_pretty(&report)?;
         println!("{json_str}");
     } else {

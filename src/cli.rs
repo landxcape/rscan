@@ -130,6 +130,10 @@ pub struct Cli {
     /// Output results in JSON format
     #[arg(long)]
     pub json: bool,
+
+    /// Output only discovered host IP addresses (one per line), ideal for piping
+    #[arg(short = 'q', long, aliases = ["quiet"])]
+    pub plain: bool,
 }
 
 #[cfg(test)]
@@ -179,6 +183,7 @@ mod tests {
         assert_eq!(&args.ports[..], DEFAULT_PORTS);
         assert!(!args.no_ports);
         assert!(!args.json);
+        assert!(!args.plain);
         assert!(!args.list_interfaces);
         assert!(args.target.is_none());
         assert!(args.interface.is_none());
@@ -199,6 +204,7 @@ mod tests {
             "--allow-large-subnet",
             "--no-ports",
             "--json",
+            "-q",
             "-w",
             "5",
         ]);
@@ -209,6 +215,7 @@ mod tests {
         assert!(args.allow_large_subnet);
         assert!(args.no_ports);
         assert!(args.json);
+        assert!(args.plain);
         assert_eq!(args.timeout, 5);
     }
 }
