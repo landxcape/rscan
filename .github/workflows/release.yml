@@ -10,7 +10,7 @@ env:
 
 jobs:
   build:
-    name: Build for ${{ matrix.os }}
+    name: Build (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -18,12 +18,19 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact_name: rscan-linux-x86_64
+            archive_ext: tar.gz
           - os: macos-latest
             target: x86_64-apple-darwin
             artifact_name: rscan-macos-x86_64
+            archive_ext: tar.gz
           - os: macos-latest
             target: aarch64-apple-darwin
             artifact_name: rscan-macos-aarch64
+            archive_ext: tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: rscan-windows-x86_64
+            archive_ext: zip
 
     steps:
       - uses: actions/checkout@v4
@@ -40,17 +47,25 @@ jobs:
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Package
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           cd target/${{ matrix.target }}/release
           tar -czf ../../../${{ matrix.artifact_name }}.tar.gz rscan
 
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cd target/${{ matrix.target }}/release
+          Compress-Archive -Path rscan.exe -DestinationPath ../../../${{ matrix.artifact_name }}.zip
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.artifact_name }}.tar.gz
+          path: ${{ matrix.artifact_name }}.${{ matrix.archive_ext }}
 
   release:
     name: Create GitHub Release
@@ -69,7 +84,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*.tar.gz
+          files: artifacts/**/*
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,8 +1,5 @@
 use crate::cli::Cli;
-use crate::core::arp::{broadcast_arp_requests, spawn_arp_listener};
-use crate::core::network::{
-    calculate_host_count, check_privileges, create_datalink_channel, infer_subnet,
-};
+use crate::core::network::{calculate_host_count, check_privileges, infer_subnet};
 use crate::core::port::scan_ports;
 use crate::output::format::{
     print_interfaces_table, print_json_report, print_plain_report, print_table_report,
@@ -16,6 +13,14 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{Semaphore, mpsc};
 use tokio::task::JoinSet;
+
+#[cfg(not(target_os = "windows"))]
+use crate::core::arp::{broadcast_arp_requests, spawn_arp_listener};
+#[cfg(not(target_os = "windows"))]
+use crate::core::network::create_datalink_channel;
+
+#[cfg(target_os = "windows")]
+use crate::core::arp::scan_windows_subnet;
 
 pub async fn run_scan(config: Cli) -> Result<()> {
     let interfaces = datalink::interfaces();
@@ -41,7 +46,8 @@ pub async fn run_scan(config: Cli) -> Result<()> {
 
     let mac = iface
         .mac
-        .context(format!("Interface '{}' has no MAC address.", iface.name))?;
+        .map(|m| m.to_string())
+        .unwrap_or_else(|| "00:00:00:00:00:00".to_string());
 
     // Extract source IPv4
     let source_ip = iface
@@ -81,21 +87,41 @@ pub async fn run_scan(config: Cli) -> Result<()> {
 
     let (tx_results, mut rx_results) = mpsc::channel::<(Ipv4Addr, MacAddr)>(1000);
 
-    // 5. Spawn the synchronous listener in a blocking task
-    let (_, rx) = create_datalink_channel(&iface)?;
-    let _listener_handle = spawn_arp_listener(rx, tx_results);
-
-    // 6. Datalink TX channel
-    let (mut tx, _) = create_datalink_channel(&iface)?;
-
     let host_count = calculate_host_count(target_network);
     if !config.json && !config.plain {
-        println!("Broadcasting ARP requests to {host_count} hosts...");
+        println!("Scanning ARP for {host_count} hosts...");
     }
 
-    broadcast_arp_requests(&mut tx, mac, source_ip, target_network, config.arp_delay_us).await?;
+    // 5. Initiate ARP Discovery according to OS capability
+    #[cfg(not(target_os = "windows"))]
+    {
+        let source_mac = iface
+            .mac
+            .context(format!("Interface '{}' has no MAC address.", iface.name))?;
+        let (_, rx) = create_datalink_channel(&iface)?;
+        let _listener_handle = spawn_arp_listener(rx, tx_results);
+        let (mut tx, _) = create_datalink_channel(&iface)?;
+        broadcast_arp_requests(
+            &mut tx,
+            source_mac,
+            source_ip,
+            target_network,
+            config.arp_delay_us,
+        )
+        .await?;
+    }
 
-    // 7. Receive ARP replies and trigger concurrent port scanning
+    #[cfg(target_os = "windows")]
+    {
+        let target_net = target_network;
+        let tx = tx_results.clone();
+        let concurrency = config.concurrency;
+        tokio::spawn(async move {
+            let _ = scan_windows_subnet(target_net, tx, concurrency).await;
+        });
+    }
+
+    // 6. Receive ARP replies and trigger concurrent port scanning
     let scan_timeout = tokio::time::sleep(Duration::from_secs(config.timeout));
     tokio::pin!(scan_timeout);
 

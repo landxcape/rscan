@@ -1,5 +1,7 @@
 use anyhow::{Context, Result, bail};
-use pnet::datalink::{self, NetworkInterface};
+#[cfg(not(target_os = "windows"))]
+use pnet::datalink;
+use pnet::datalink::NetworkInterface;
 use std::net::IpAddr;
 
 /// Verify if the process has administrative privileges or capabilities required for raw sockets
@@ -24,6 +26,7 @@ pub fn check_privileges() -> Result<()> {
 }
 
 /// Create an Ethernet datalink channel with descriptive permission errors
+#[cfg(not(target_os = "windows"))]
 pub fn create_datalink_channel(
     iface: &NetworkInterface,
 ) -> Result<(
