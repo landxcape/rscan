@@ -1,11 +1,9 @@
 # rscan
 
-[![Rust](https://img.shields.io/badge/Rust-2024%20Edition-orange?logo=rust)](https://www.rust-lang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Async: Tokio](https://img.shields.io/badge/Async-Tokio-brightgreen?logo=tokio)](https://tokio.rs/)
-[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)]()
+[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-blue)]()
 
-A high-performance Layer 2 ARP network discovery and concurrent TCP port scanner written in Rust.
+A Layer 2 ARP network discovery and concurrent TCP port scanner.
 
 `rscan` sweeps local subnets by broadcasting raw Ethernet frames (on macOS/Linux) or utilizing native OS IP Helper APIs (on Windows), sniffs ARP replies to bypass host-level firewalls that block ICMP echo requests, resolves hardware manufacturers against an offline IEEE OUI database, and concurrently audits open TCP ports using bounded asynchronous tasks.
 
